@@ -1,0 +1,20 @@
+name: Run Leumi Bot
+on:
+  schedule:
+    - cron: '30 13 * * 1,4' # רץ ב-13:30 UTC (15:30 ישראל) בימי שני וחמישי
+  workflow_dispatch: # מאפשר לך להריץ ידנית לבדיקה
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install yfinance pyTelegramBotAPI requests
+      - name: Run bot
+        run: python "TEST BANKS.py"
