@@ -4,22 +4,19 @@ from telebot import types
 import requests
 import warnings
 import os
-import time
-from datetime import datetime
-
 
 warnings.filterwarnings("ignore")
 
-# ─── CONFIGURATION (משתני סביבה מאובטחים) ──────────────────
-# הקוד ימשוך את הערכים האלו מה-GitHub Secrets בזמן הריצה
+# ─── CONFIGURATION ───────────────────────────────────────────
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 GM_TOKEN = os.getenv("GM_TOKEN")
 
-
 PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.leumi.iLeumiTrade.UI"
 
 bot = telebot.TeleBot(BOT_TOKEN)
+
+MARKET_INDEX_SYMBOL = "^TA125.TA"
 
 BANKS = {
     "POLI.TA": {"name": "Hapoalim", "weight": 0.335},
@@ -78,16 +75,15 @@ def call_gemini(prompt: str) -> str | None:
     return None
 
 
-def get_gemini_analysis(bank_results: list, trend: float) -> str | None:
+def get_gemini_analysis(bank_results: list, bank_trend: float, market_change: float) -> str | None:
     summary = ", ".join([f"{b['name']} {b['change']:.2f}%" for b in bank_results])
     prompt = (
-        f"You are a senior Wall Street analyst covering Israeli equities. "
-        f"Today the Israeli banking sector moved {trend:+.2f}% overall. "
-        f"Individual moves: {summary}. "
-        f"Write exactly 2 sentences MAX. Be concise and sharp. "
-        f"DO NOT use numbers, percentages, or digits. "
-        f"Name the worst performer, give one macro reason, end with outlook. "
-        f"Bloomberg style. Must end with a period. Keep it under 50 words. Must end with a period."
+        f"Context: Today the Israeli banking sector moved {bank_trend:+.2f}% while the broader TA-125 index moved {market_change:+.2f}%. "
+        f"Bank data: {summary}. "
+        f"Write exactly 2 sentences of high-level financial analysis in English. "
+        f"DO NOT use numbers or percentages. Focus on relative performance between banks and the market index. "
+        f"Name the primary laggard, identify a macro cause, and provide a forward-looking sentiment. "
+        f"Bloomberg style. Must end with a period. Keep it under 50 words."
     )
     return call_gemini(prompt)
 
@@ -97,8 +93,8 @@ def get_accurate_change(symbol: str):
         ticker = yf.Ticker(symbol)
         df = ticker.history(period="5d", interval="1d")
         if len(df) >= 2:
-            prev  = float(df["Close"].iloc[-2])
-            curr  = float(df["Close"].iloc[-1])
+            prev = float(df["Close"].iloc[-2])
+            curr = float(df["Close"].iloc[-1])
             change = ((curr - prev) / prev) * 100
             return curr, change
     except Exception as e:
@@ -108,19 +104,22 @@ def get_accurate_change(symbol: str):
 
 def run():
     print("🚀 Starting Israel Banking Sector Bot...")
-    results, weighted_sum = [], 0.0
 
+    # משיכת מדד ת"א 125
+    _, market_change = get_accurate_change(MARKET_INDEX_SYMBOL)
+
+    results, weighted_sum = [], 0.0
     for symbol, info in BANKS.items():
         price, change = get_accurate_change(symbol)
         if price is not None:
             results.append({"name": info["name"], "change": change})
             weighted_sum += change * info["weight"]
 
-    if not results:
+    if not results or market_change is None:
         print("❌ No data. Aborting.")
         return
 
-    ai_insight = get_gemini_analysis(results, weighted_sum)
+    ai_insight = get_gemini_analysis(results, weighted_sum, market_change)
 
     if not ai_insight:
         leader = max(results, key=lambda x: abs(x["change"]))
@@ -131,7 +130,11 @@ def run():
             f"reflecting broader market sentiment shifts."
         )
 
-    # HTML encoding - בטוח לחלוטין, אף תו לא יפגע בפורמט
+    # חיתוך בנקודה האחרונה
+    if "." in ai_insight:
+        ai_insight = ai_insight[:ai_insight.rfind(".") + 1]
+
+    # HTML encoding
     ai_insight_safe = (
         ai_insight
         .replace("&", "&amp;")
@@ -139,14 +142,18 @@ def run():
         .replace(">", "&gt;")
     )
 
-    icon = "🟢" if weighted_sum > 0 else "🔴"
+    icon   = "🟢" if weighted_sum > 0 else "🔴"
+    m_icon = "📈" if market_change > 0 else "📉"
 
     lines = [
         "🏛 <b>ISRAEL BANKING SECTOR: INTELLIGENCE REPORT</b>",
-        f"📊 Market Trend: <b>{weighted_sum:+.2f}%</b> {icon}",
+        f"📊 Sector Trend: <b>{weighted_sum:+.2f}%</b> {icon}",
+        f"{m_icon} TA-125 Index: <code>{market_change:+.2f}%</code>",
         "──────────────────",
     ]
-    for b in results:
+
+    sorted_results = sorted(results, key=lambda x: x["change"], reverse=True)
+    for b in sorted_results:
         b_icon = "🟢" if b["change"] > 0 else "🔴"
         lines.append(f"{b_icon} {b['name']}: <code>{b['change']:+.2f}%</code>")
 
@@ -163,7 +170,7 @@ def run():
         bot.send_message(
             CHAT_ID,
             "\n".join(lines),
-            parse_mode="HTML",        # ← HTML במקום Markdown
+            parse_mode="HTML",
             reply_markup=markup,
         )
         print("✅ Message sent!")
@@ -173,5 +180,3 @@ def run():
 
 if __name__ == "__main__":
     run()
-
-
