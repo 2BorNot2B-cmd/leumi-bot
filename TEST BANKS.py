@@ -95,22 +95,12 @@ def get_gemini_analysis(bank_results: list, trend: float) -> str | None:
 def get_accurate_change(symbol: str):
     try:
         ticker = yf.Ticker(symbol)
-        info = ticker.fast_info
-        current_price = info.last_price
-        prev_close = info.previous_close
-
-        if current_price and prev_close:
-            change = ((current_price - prev_close) / prev_close) * 100
-            return current_price, change
-
-        # גיבוי
-        df = ticker.history(period="2d")
+        df = ticker.history(period="5d", interval="1d")
         if len(df) >= 2:
-            current_close = float(df["Close"].iloc[-1])
-            prev_close_fb = float(df["Close"].iloc[-2])
-            change = ((current_close - prev_close_fb) / prev_close_fb) * 100
-            return current_close, change
-
+            prev  = float(df["Close"].iloc[-2])
+            curr  = float(df["Close"].iloc[-1])
+            change = ((curr - prev) / prev) * 100
+            return curr, change
     except Exception as e:
         print(f"⚠️ yfinance error for {symbol}: {e}")
     return None, None
@@ -183,4 +173,5 @@ def run():
 
 if __name__ == "__main__":
     run()
+
 
