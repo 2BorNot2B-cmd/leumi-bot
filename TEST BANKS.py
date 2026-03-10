@@ -16,14 +16,8 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 GM_TOKEN = os.getenv("GM_TOKEN")
 
-PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.leumi.iLeumiTrade.UI"
 
-# בדיקה בסיסית שהסודות נטענו
-if not BOT_TOKEN or not CHAT_ID:
-    print("❌ Critical Error: Missing Telegram Secrets!")
-    # במחשב האישי שלך אתה יכול לשים את הטוקן פה זמנית לבדיקה, 
-    # אבל לעולם אל תעלה אותו ל-GitHub ככה!
-    # BOT_TOKEN = "כאן הטוקן שלך רק לבדיקה מקומית"
+PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.leumi.iLeumiTrade.UI"
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -35,11 +29,10 @@ BANKS = {
     "FIBI.TA": {"name": "First Intl","weight": 0.070},
 }
 
-# ─── המודלים הנכונים לפי התשובה מגוגל ───────────────────────
 GEMINI_MODELS = [
-    "gemini-2.5-flash",   # הכי חדש וחינמי
-    "gemini-2.0-flash",   # גיבוי
-    "gemini-1.5-flash",   # גיבוי ישן
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
 ]
 
 
@@ -47,7 +40,7 @@ def call_gemini(prompt: str) -> str | None:
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"maxOutputTokens": 500, "temperature": 0.85},
+        "generationConfig": {"maxOutputTokens": 1200, "temperature": 0.85},
     }
 
     for model in GEMINI_MODELS:
@@ -72,20 +65,15 @@ def call_gemini(prompt: str) -> str | None:
                 if text:
                     print(f"✅ Success with: {model}")
                     return text
-
             elif resp.status_code == 404:
                 print(f"❌ 404 on {model}, trying next...")
-                continue
             else:
                 print(f"❌ {resp.status_code}: {resp.text[:150]}")
-                continue
 
         except requests.exceptions.Timeout:
             print(f"⏱️ Timeout on {model}")
-            continue
         except Exception as e:
             print(f"❌ Exception: {e}")
-            continue
 
     return None
 
@@ -96,10 +84,10 @@ def get_gemini_analysis(bank_results: list, trend: float) -> str | None:
         f"You are a senior Wall Street analyst covering Israeli equities. "
         f"Today the Israeli banking sector moved {trend:+.2f}% overall. "
         f"Individual moves: {summary}. "
-        f"Write 2 sentences of institutional-grade analysis. "
-        f"DO NOT use any numbers, percentages, or digits in your response. "
-        f"Mention which bank led losses by name, suggest a macro cause, end with outlook. "
-        f"Bloomberg terminal style. End with a period."
+        f"Write exactly 2 sentences MAX. Be concise and sharp. "
+        f"DO NOT use numbers, percentages, or digits. "
+        f"Name the worst performer, give one macro reason, end with outlook. "
+        f"Bloomberg style. Must end with a period. Keep it under 50 words. Must end with a period."
     )
     return call_gemini(prompt)
 
@@ -107,22 +95,22 @@ def get_gemini_analysis(bank_results: list, trend: float) -> str | None:
 def get_accurate_change(symbol: str):
     try:
         ticker = yf.Ticker(symbol)
-        # שימוש ב-fast_info נותן נתונים בזמן אמת בצורה אמינה יותר
         info = ticker.fast_info
         current_price = info.last_price
         prev_close = info.previous_close
-        
+
         if current_price and prev_close:
             change = ((current_price - prev_close) / prev_close) * 100
             return current_price, change
-            
-        # גיבוי בשיטה הישנה אם fast_info נכשל
+
+        # גיבוי
         df = ticker.history(period="2d")
         if len(df) >= 2:
-            current_close = df['Close'].iloc[-1]
-            prev_close = df['Close'].iloc[-2]
-            change = ((current_close - prev_close) / prev_close) * 100
+            current_close = float(df["Close"].iloc[-1])
+            prev_close_fb = float(df["Close"].iloc[-2])
+            change = ((current_close - prev_close_fb) / prev_close_fb) * 100
             return current_close, change
+
     except Exception as e:
         print(f"⚠️ yfinance error for {symbol}: {e}")
     return None, None
@@ -148,36 +136,46 @@ def run():
         leader = max(results, key=lambda x: abs(x["change"]))
         direction = "advances" if weighted_sum > 0 else "declines"
         ai_insight = (
-            f"The Israeli banking sector {direction} {weighted_sum:+.2f}% "
-            f"with {leader['name']} leading at {leader['change']:+.2f}%, "
+            f"The Israeli banking sector {direction}, "
+            f"with {leader['name']} leading the move, "
             f"reflecting broader market sentiment shifts."
         )
 
-    # ניקוי תווים שמשברים Markdown של Telegram
-    for ch in ["_", "*", "`", "["]:
-        ai_insight = ai_insight.replace(ch, "")
+    # HTML encoding - בטוח לחלוטין, אף תו לא יפגע בפורמט
+    ai_insight_safe = (
+        ai_insight
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
 
     icon = "🟢" if weighted_sum > 0 else "🔴"
+
     lines = [
-        "🏛 *ISRAEL BANKING SECTOR: INTELLIGENCE REPORT*",
-        f"📊 Market Trend: *{weighted_sum:+.2f}%* {icon}",
+        "🏛 <b>ISRAEL BANKING SECTOR: INTELLIGENCE REPORT</b>",
+        f"📊 Market Trend: <b>{weighted_sum:+.2f}%</b> {icon}",
         "──────────────────",
     ]
     for b in results:
         b_icon = "🟢" if b["change"] > 0 else "🔴"
-        lines.append(f"{b_icon} {b['name']}: `{b['change']:+.2f}%`")
+        lines.append(f"{b_icon} {b['name']}: <code>{b['change']:+.2f}%</code>")
 
     lines += [
         "──────────────────",
-        "🤖 *AI STRATEGIC INSIGHT (Gemini 2.5):*",
-        f"{ai_insight}",
+        "🤖 <b>AI STRATEGIC INSIGHT (Gemini 2.5):</b>",
+        ai_insight_safe,
     ]
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton("🚀 Open Leumi Trade", url=PLAY_STORE_URL))
 
     try:
-        bot.send_message(CHAT_ID, "\n".join(lines), parse_mode="Markdown", reply_markup=markup)
+        bot.send_message(
+            CHAT_ID,
+            "\n".join(lines),
+            parse_mode="HTML",        # ← HTML במקום Markdown
+            reply_markup=markup,
+        )
         print("✅ Message sent!")
     except Exception as e:
         print(f"❌ Telegram Error: {e}")
@@ -185,6 +183,4 @@ def run():
 
 if __name__ == "__main__":
     run()
-
-
 
