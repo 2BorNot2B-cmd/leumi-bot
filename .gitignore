@@ -1,0 +1,14 @@
+# Python files to ignore
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# PyCharm / IDE files
+.idea/
+.vscode/
+
+# System files
+.DS_Store
+Thumbs.db
