@@ -1,4 +1,4 @@
-name: Run Leumi Bot
+name: Run Banking Analyst
 on:
   schedule:
     # שני עד חמישי - מכוון ל-14:45 (12:45 UTC)
@@ -29,4 +29,4 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GM_TOKEN: ${{ secrets.GM_TOKEN }}
-        run: python "TEST BANKS.py"
+        run: python "main.py"
