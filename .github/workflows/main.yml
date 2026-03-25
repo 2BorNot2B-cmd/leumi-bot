@@ -1,10 +1,8 @@
 name: Run Banking Analyst
 on:
   schedule:
-    # שני עד חמישי - מכוון ל-14:45 (12:45 UTC)
     - cron: '15 12 * * 1-4'
     
-    # יום שישי - נשאר ב-12:00 (10:00 UTC)
     - cron: '0 10 * * 5'
   workflow_dispatch: # מאפשר הרצה ידנית
 
